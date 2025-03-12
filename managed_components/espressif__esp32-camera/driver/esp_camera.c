@@ -169,58 +169,62 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
         CAMERA_ENABLE_OUT_CLOCK(config);
     }
 
-    if (config->pin_sccb_sda != -1) {
-        ESP_LOGD(TAG, "Initializing SCCB");
-        ret = SCCB_Init(config->pin_sccb_sda, config->pin_sccb_scl);
-    } else {
-        ESP_LOGD(TAG, "Using existing I2C port");
-        ret = SCCB_Use_Port(config->sccb_i2c_port);
-    }
+    // do not init i2c
+    // if (config->pin_sccb_sda != -1) {
+    //     ESP_LOGD(TAG, "Initializing SCCB");
+        // ret = SCCB_Init(config->pin_sccb_sda, config->pin_sccb_scl);
+    // } else {
+    //     ESP_LOGD(TAG, "Using existing I2C port");
+    //     ret = SCCB_Use_Port(config->sccb_i2c_port);
+    // }
 
-    if(ret != ESP_OK) {
-        ESP_LOGE(TAG, "sccb init err");
-        goto err;
-    }
+    // if(ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "sccb init err");
+    //     goto err;
+    // }
 
-    if (config->pin_pwdn >= 0) {
-        ESP_LOGD(TAG, "Resetting camera by power down line");
-        gpio_config_t conf = { 0 };
-        conf.pin_bit_mask = 1LL << config->pin_pwdn;
-        conf.mode = GPIO_MODE_OUTPUT;
-        gpio_config(&conf);
+    // no pwdn
+    // if (config->pin_pwdn >= 0) {
+    //     ESP_LOGD(TAG, "Resetting camera by power down line");
+    //     gpio_config_t conf = { 0 };
+    //     conf.pin_bit_mask = 1LL << config->pin_pwdn;
+    //     conf.mode = GPIO_MODE_OUTPUT;
+    //     gpio_config(&conf);
 
-        // carefull, logic is inverted compared to reset pin
-        gpio_set_level(config->pin_pwdn, 1);
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        gpio_set_level(config->pin_pwdn, 0);
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
+    //     // carefull, logic is inverted compared to reset pin
+    //     gpio_set_level(config->pin_pwdn, 1);
+    //     vTaskDelay(10 / portTICK_PERIOD_MS);
+    //     gpio_set_level(config->pin_pwdn, 0);
+    //     vTaskDelay(10 / portTICK_PERIOD_MS);
+    // }
 
-    if (config->pin_reset >= 0) {
-        ESP_LOGD(TAG, "Resetting camera");
-        gpio_config_t conf = { 0 };
-        conf.pin_bit_mask = 1LL << config->pin_reset;
-        conf.mode = GPIO_MODE_OUTPUT;
-        gpio_config(&conf);
+    // no reset
+    // if (config->pin_reset >= 0) {
+    //     ESP_LOGD(TAG, "Resetting camera");
+    //     gpio_config_t conf = { 0 };
+    //     conf.pin_bit_mask = 1LL << config->pin_reset;
+    //     conf.mode = GPIO_MODE_OUTPUT;
+    //     gpio_config(&conf);
 
-        gpio_set_level(config->pin_reset, 0);
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        gpio_set_level(config->pin_reset, 1);
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
+    //     gpio_set_level(config->pin_reset, 0);
+    //     vTaskDelay(10 / portTICK_PERIOD_MS);
+    //     gpio_set_level(config->pin_reset, 1);
+    //     vTaskDelay(10 / portTICK_PERIOD_MS);
+    // }
 
-    ESP_LOGD(TAG, "Searching for camera address");
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    // skip search for camera address
+    // ESP_LOGD(TAG, "Searching for camera address");
+    // vTaskDelay(10 / portTICK_PERIOD_MS);
 
-    uint8_t slv_addr = SCCB_Probe();
+    // uint8_t slv_addr = SCCB_Probe();
 
-    if (slv_addr == 0) {
-        ret = ESP_ERR_NOT_FOUND;
-        goto err;
-    }
+    // if (slv_addr == 0) {
+    //     ret = ESP_ERR_NOT_FOUND;
+    //     goto err;
+    // }
 
-    ESP_LOGI(TAG, "Detected camera at address=0x%02x", slv_addr);
-    s_state->sensor.slv_addr = slv_addr;
+    // ESP_LOGI(TAG, "Detected camera at address=0x%02x", slv_addr);
+    // s_state->sensor.slv_addr = slv_addr;
     s_state->sensor.xclk_freq_hz = config->xclk_freq_hz;
 
     /**
@@ -228,18 +232,22 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
      * Attention: Some sensors have the same SCCB address. Therefore, several attempts may be made in the detection process
      */
     sensor_id_t *id = &s_state->sensor.id;
-    for (size_t i = 0; i < sizeof(g_sensors) / sizeof(sensor_func_t); i++) {
-        if (g_sensors[i].detect(slv_addr, id)) {
-            camera_sensor_info_t *info = esp_camera_sensor_get_info(id);
-            if (NULL != info) {
-                *out_camera_model = info->model;
-                ESP_LOGI(TAG, "Detected %s camera", info->name);
-                g_sensors[i].init(&s_state->sensor);
-                break;
-            }
-        }
-    }
+    id->PID = OV5640_PID;
+    (void)g_sensors;
+    // for (size_t i = 0; i < sizeof(g_sensors) / sizeof(sensor_func_t); i++) {
+    //     if (g_sensors[i].detect(slv_addr, id)) {
+            // camera_sensor_info_t *info = esp_camera_sensor_get_info(id);
+    //         if (NULL != info) {
+    //             *out_camera_model = info->model;
+    //             ESP_LOGI(TAG, "Detected %s camera", info->name);
+                // g_sensors[i].init(&s_state->sensor);
+    //             break;
+    //         }
+    //     }
+    // }
 
+    // set out_camera_model to always OV5640
+    *out_camera_model = CAMERA_OV5640;
     if (CAMERA_NONE == *out_camera_model) { //If no supported sensors are detected
         ESP_LOGE(TAG, "Detected camera not supported.");
         ret = ESP_ERR_NOT_SUPPORTED;
@@ -249,10 +257,11 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
     ESP_LOGI(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
              id->PID, id->VER, id->MIDH, id->MIDL);
 
-    ESP_LOGD(TAG, "Doing SW reset of sensor");
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    // ESP_LOGD(TAG, "Doing SW reset of sensor");
+    // vTaskDelay(10 / portTICK_PERIOD_MS);
 
-    return s_state->sensor.reset(&s_state->sensor);
+    // return s_state->sensor.reset(&s_state->sensor);
+    return ESP_OK;
 err :
     CAMERA_DISABLE_OUT_CLOCK();
     return ret;
@@ -284,7 +293,8 @@ esp_err_t esp_camera_init(const camera_config_t *config)
         return err;
     }
 
-    camera_model_t camera_model = CAMERA_NONE;
+    camera_model_t camera_model = CAMERA_OV5640;
+    // modify camera_probe to only init s_state object partially, skipping the i2c configuration portions
     err = camera_probe(config, &camera_model);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Camera probe failed with error 0x%x(%s)", err, esp_err_to_name(err));
@@ -314,30 +324,30 @@ esp_err_t esp_camera_init(const camera_config_t *config)
     s_state->sensor.status.framesize = frame_size;
     s_state->sensor.pixformat = pix_format;
 
-    ESP_LOGD(TAG, "Setting frame size to %dx%d", resolution[frame_size].width, resolution[frame_size].height);
-    if (s_state->sensor.set_framesize(&s_state->sensor, frame_size) != 0) {
-        ESP_LOGE(TAG, "Failed to set frame size");
-        err = ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
-        goto fail;
-    }
-    s_state->sensor.set_pixformat(&s_state->sensor, pix_format);
+    // ESP_LOGD(TAG, "Setting frame size to %dx%d", resolution[frame_size].width, resolution[frame_size].height);
+    // if (s_state->sensor.set_framesize(&s_state->sensor, frame_size) != 0) {
+    //     ESP_LOGE(TAG, "Failed to set frame size");
+    //     err = ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
+    //     goto fail;
+    // }
+    // s_state->sensor.set_pixformat(&s_state->sensor, pix_format);
 #if CONFIG_CAMERA_CONVERTER_ENABLED
     if(config->conv_mode) {
         s_state->sensor.pixformat = get_output_data_format(config->conv_mode); // If conversion enabled, change the out data format by conversion mode
     }
 #endif
 
-    if (s_state->sensor.id.PID == OV2640_PID) {
-        s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
-        s_state->sensor.set_bpc(&s_state->sensor, false);
-        s_state->sensor.set_wpc(&s_state->sensor, true);
-        s_state->sensor.set_lenc(&s_state->sensor, true);
-    }
+    // if (s_state->sensor.id.PID == OV2640_PID) {
+    //     s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
+    //     s_state->sensor.set_bpc(&s_state->sensor, false);
+    //     s_state->sensor.set_wpc(&s_state->sensor, true);
+    //     s_state->sensor.set_lenc(&s_state->sensor, true);
+    // }
 
-    if (pix_format == PIXFORMAT_JPEG) {
-        s_state->sensor.set_quality(&s_state->sensor, config->jpeg_quality);
-    }
-    s_state->sensor.init_status(&s_state->sensor);
+    // if (pix_format == PIXFORMAT_JPEG) {
+    //     s_state->sensor.set_quality(&s_state->sensor, config->jpeg_quality);
+    // }
+    // s_state->sensor.init_status(&s_state->sensor);
 
     cam_start();
 

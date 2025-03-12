@@ -92,6 +92,7 @@ void ll_cam_dma_reset(cam_obj_t *cam)
 static void CAMERA_ISR_IRAM_ATTR ll_cam_vsync_isr(void *arg)
 {
     //DBG_PIN_SET(1);
+    // ESP_LOGI(TAG, "ll_cam_vsync_isr");
     cam_obj_t *cam = (cam_obj_t *)arg;
     BaseType_t HPTaskAwoken = pdFALSE;
 
@@ -116,7 +117,6 @@ static void CAMERA_ISR_IRAM_ATTR ll_cam_dma_isr(void *arg)
 {
     cam_obj_t *cam = (cam_obj_t *)arg;
     BaseType_t HPTaskAwoken = pdFALSE;
-
     typeof(GDMA.channel[cam->dma_num].in.int_st) status = GDMA.channel[cam->dma_num].in.int_st;
     if (status.val == 0) {
         return;
@@ -421,6 +421,7 @@ esp_err_t ll_cam_init_isr(cam_obj_t *cam)
         ESP_LOGE(TAG, "LCD_CAM interrupt allocation of camera failed");
 		return ret;
 	}
+    ESP_LOGI(TAG, "Init dma isr");
     return ESP_OK;
 }
 

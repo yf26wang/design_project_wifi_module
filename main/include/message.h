@@ -2,6 +2,6 @@
 
 typedef struct {
     camera_fb_t * pic;
-    int64_t time;
-    int seq;
+    uint64_t time;
+    uint64_t seq;
 } frame_t;

@@ -128,12 +128,13 @@ static void cam_task(void *arg)
 
             case CAM_STATE_IDLE: {
                 if (cam_event == CAM_VSYNC_EVENT) {
-                    //DBG_PIN_SET(1);
+                    // DBG_PIN_SET(1);
                     if(cam_start_frame(&frame_pos)){
                         cam_obj->frames[frame_pos].fb.len = 0;
                         cam_obj->state = CAM_STATE_READ_BUF;
                     }
                     cnt = 0;
+                    // ESP_LOGI(TAG, "here");
                 }
             }
             break;
