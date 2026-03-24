@@ -110,8 +110,12 @@ static const char *TAG_WIFI = "wifi_request_task";
 // #define RECEIVE_URL "http://172.20.10.8:6000/send"
 // #define RECEIVE_SERVER "www.192.168.122.249:5000"
 // #define RECEIVE_URL "http://192.168.122.249:5000/send" 
+// #define RECEIVE_SERVER "www.192.168.219.249:5000"
+// #define RECEIVE_URL "http://192.168.219.249:5000/send" 
 #define RECEIVE_SERVER "www.192.168.0.100:5000"
 #define RECEIVE_URL "http://192.168.0.100:5000/send" 
+// #define RECEIVE_SERVER "www.192.168.1.20:5000"
+// #define RECEIVE_URL "http://192.168.1.20:5000/send" 
 #define SIG_COMPLETE_SERVER "www.receive-image-vvjuxrz3lq-uc.a.run.app"
 #define SIG_COMPLETE_URL "https://receive-image-vvjuxrz3lq-uc.a.run.app"
 
@@ -143,7 +147,9 @@ static esp_tls_client_session_t *tls_client_session = NULL;
 static bool save_client_session = false;
 #endif
 
-#define FRAME_NUM 100
+#define LED_PIN 0
+#define MOTION_DETECTED_PIN 47
+#define SEND_DONE_PIN 21 
 
 static camera_config_t camera_config = {
     .pin_pwdn = CAM_PIN_PWDN,
@@ -170,22 +176,23 @@ static camera_config_t camera_config = {
     .ledc_channel = LEDC_CHANNEL_0,
     
     .pixel_format = PIXFORMAT_JPEG, // YUV422,GRAYSCALE,RGB565,JPEG
-    .frame_size = FRAMESIZE_UXGA,   // QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
+    .frame_size = FRAMESIZE_HD,   // QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
 
     .jpeg_quality = 4, // 0-63, for OV series camera sensors, lower number means higher quality
-    .fb_count = 4,      // When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
+    .fb_count = 10,      // When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
     .fb_location = CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
 
-// static void https_get_request2(esp_tls_cfg_t cfg, const char *WEB_SERVER_URL, const char *REQUEST, int size);
-// static void https_get_request_using_crt_bundle(void);
-// static void wifi_request_task(void *pvparameters);
 static void http_rest_with_url(void *pvparameters);
 static void capture_image();
 
+#define FRAMES_TO_SEND 55
+
 // Globals
 static QueueHandle_t x_frame_queue;
+esp_timer_handle_t periodic_timer;
+volatile int frame_num = 0;
 
 static esp_err_t init_camera(void)
 {
@@ -207,30 +214,46 @@ static esp_err_t init_timer() {
         .name = "periodic"
     };
 
-    esp_timer_handle_t periodic_timer;
+    
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-
+    
+    // xSemaphore = xSemaphoreCreateBinary();
+    // xTaskCreate(&timer_task, "timer task", 8192, NULL, configMAX_PRIORITIES - 3, NULL);
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 200000)); // timer once every 0.2s
-    ESP_LOGI(TAG,"Timer started");
+    ESP_LOGI(TAG,"Timer initialized");
     return ESP_OK;
 }
 
 static void capture_image(void * arg) {
-    // static int frame_num = 100;
-    // if(gpio)
-    //     return;
-    // struct timeval tv_now;
-    // int64_t time_us;
     static uint64_t seq_num = 0;
+    static uint64_t time;
+    static struct timeval tv_now;
+    
+    // no motion detected
+    if(frame_num == 0) {
+        return;
+    }
+    // first frame
+    else if(frame_num == FRAMES_TO_SEND) {
+        gettimeofday(&tv_now, NULL);
+        time = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+    }
+    
     camera_fb_t * pic = esp_camera_fb_get();
     // ESP_LOGI(TAG, "Capture");
         if(pic != NULL) {
             frame_t image;
-            image.time = 123142;
+            image.time = time;
             image.seq = seq_num++;
             image.pic = pic;
             xQueueSendToBack( x_frame_queue, ( void * ) &image, pdMS_TO_TICKS(10000000));
-            // frame_num--;
+            frame_num--;
+            if(frame_num == 0) {
+                gpio_set_level(LED_PIN, gpio_get_level(LED_PIN) ^ 0x1);
+                
+                gpio_set_level(SEND_DONE_PIN, 1);
+                ESP_LOGI(TAG, "Finished Capturing %d frames!", FRAMES_TO_SEND);
+            }
         }
         else {
             ESP_LOGE(TAG, "Invalid image.");
@@ -386,7 +409,6 @@ static void http_rest_with_url(void *pvparameters)
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    // esp_http_client_handle_t client2 = esp_http_client_init(&config);
 
     // POST
     esp_http_client_set_url(client, RECEIVE_URL);
@@ -417,24 +439,11 @@ static void http_rest_with_url(void *pvparameters)
         esp_http_client_set_header(client, "frame-number", frame_number_str);
         // ESP_LOGI(TAG_WIFI, "time (microsec): %lld",  frame->time);
         esp_http_client_set_post_field(client, (char *) frame.pic->buf, frame.pic->len);
-        gpio_set_level(0,0);
         err = esp_http_client_perform(client);
         // time_us = frame.time;
         esp_camera_fb_return(frame.pic); // return memory ownership to camera driver
         if (err == ESP_OK) {
-            gpio_set_level(0, 1);
-            // ESP_LOGI(TAG_WIFI, "%d", frame_num);
-            // if(frame.seq == FRAME_NUM) {
-            //     gettimeofday(&tv_now, NULL);
-            //     int64_t time2_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
-            //     ESP_LOGI(TAG_WIFI, "Folder: %lld", frame.time);
-            //     ESP_LOGI(TAG_WIFI, "POST Done sending pictures: %lld, count: %d", time2_us, count);
-            //     ESP_LOGI(TAG_WIFI, "Diff sending (microsec): %lld", time2_us - time_us);
-            // }
-            // ESP_LOGI(TAG_WIFI, "HTTP POST Status = %d, content_length = %lld",
-            //         esp_http_client_get_status_code(client),
-            //         esp_http_client_get_content_length(client));
-            // ESP_LOGI(TAG_WIFI, "POST response data: %s", local_response_buffer);
+            gpio_set_level(LED_PIN, gpio_get_level(LED_PIN) ^ 0x1);
             gettimeofday(&tv_now, NULL);
             time2_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
             queue_messages = uxQueueMessagesWaiting(x_frame_queue);
@@ -447,17 +456,24 @@ static void http_rest_with_url(void *pvparameters)
     esp_http_client_cleanup(client);
     vTaskDelete(NULL);
 }
-// volatile int global_var = 0;
-// void IRAM_ATTR buttonInterrupt()
-// {
-//     // ESP_LOGI(TAG, "Camera vsync interrupt");
-//     global_var = 1;
-//     // gpio_intr_disable(CAM_PIN_VSYNC);
-// }
+
+void IRAM_ATTR motion_detection_interrupt()
+{
+    if(frame_num == 0){
+        frame_num = FRAMES_TO_SEND;
+        // gpio_set_level(SEND_DONE_PIN, 0);
+        gpio_set_level(SEND_DONE_PIN, 0);
+    }
+}
 
 void app_main(void)
 {
 #if ESP_CAMERA_SUPPORTED
+    gpio_set_direction(LED_PIN, GPIO_MODE_INPUT_OUTPUT);
+    gpio_set_direction(MOTION_DETECTED_PIN, GPIO_MODE_INPUT);
+    gpio_set_direction(SEND_DONE_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(SEND_DONE_PIN, 0);
+
     x_frame_queue  = xQueueCreate( 50, sizeof( frame_t ) );
     init_wifi();
     if (ESP_OK != init_camera())
@@ -466,65 +482,13 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "Camera init done!");
     init_timer();
-    // gpio_set_intr_type(CAM_PIN_VSYNC, GPIO_INTR_NEGEDGE);
-    // gpio_install_isr_service(0);
-    // gpio_isr_handler_add(CAM_PIN_VSYNC, buttonInterrupt, NULL);
-    // while(1) {
-    //     if(global_var == 1) {
-    //         ESP_LOGI(TAG, "Intr trigged");
-    //         global_var = 0;
-    //     }
-    // }
+
+    gpio_set_intr_type(MOTION_DETECTED_PIN, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(MOTION_DETECTED_PIN, motion_detection_interrupt, NULL);
     
 
-    // int frame_num = FRAME_NUM;
 
-    // struct timeval tv_now;
-    // int64_t time_us = 0;
-    // gettimeofday(&tv_now, NULL);
-    // time_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
-    // ESP_LOGI(TAG, "Start send %d pictures: %lld", frame_num, time_us);
-    // int i = 1;
-    // frame_t * frame_to_send;
-    // while (1)
-    // {
-    //     // ESP_LOGI(TAG, "Taking picture...");
-    //     camera_fb_t * pic = esp_camera_fb_get();
-    //     if(pic != NULL) {
-    //         frame_t image;
-    //         image.time = time_us;
-    //         image.seq = i;
-    //         image.pic = pic;
-    //         i++;
-    //         // ESP_LOGI(TAG, "current task num: %d", uxTaskGetNumberOfTasks());
-    //         // use pic->buf to access the image
-    //         // ESP_LOGI(TAG, "Picture taken! Its size was: %zu bytes", pic->len);
-    //         // ESP_LOGI(TAG, "Picture format: %zu", pic->format);
-    //         // ESP_LOGI(TAG, "Picture width, height: (%zu, %zu)", pic->width, pic->height);
-    //         // ESP_LOGI(TAG, "Data:");
-    //         // for(int i = 0; i < pic->len; i++) {
-    //         //     printf("0x%x ", pic->buf[i]);
-    //         // }
-    //         // printf("\n\r");
-    //         // ESP_LOGI(TAG, "Sending Picture...");
-    //         // frame_to_send = &image;
-    //         xQueueSendToBack( x_frame_queue, ( void * ) &image, pdMS_TO_TICKS(10000));
-    //         // ESP_LOGI(TAG, "Sending Done!");
-    //         // esp_camera_fb_return(image.pic);
-    //         // break;
-            
-    //         // vTaskList(buf);
-    //         // ESP_LOGI(TAG, "\r\n%s", buf);
-    //         // frame_num--;
-    //     }
-    //     // vTaskDelay(3000 / portTICK_RATE_MS);
-        
-    // }
-    // gettimeofday(&tv_now, NULL);
-    // int64_t time2_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
-    // ESP_LOGI(TAG, "Done sending pictures: %lld", time2_us);
-    // ESP_LOGI(TAG, "Diff (microsec): %lld", time2_us - time_us);
-    
 #else
     ESP_LOGE(TAG, "Camera support is not available for this chip");
     return;
